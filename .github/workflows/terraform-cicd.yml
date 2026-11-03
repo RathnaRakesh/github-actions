@@ -1,5 +1,5 @@
 
-name: Terraform CI/CD Workflow for AWS
+name: Terraform Init, Plan and Apply
 
 on:
   push:
@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
   id-token: write
+  contents: read
 
 jobs:
   terraform:
@@ -17,52 +17,42 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout GitHub Repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Debug GitHub Repository
       - name: Debug GitHub Repository
         run: |
           echo "Repository: $GITHUB_REPOSITORY"
           echo "Branch: $GITHUB_REF"
           echo "Event: $GITHUB_EVENT_NAME"
 
-      # 3. Configure AWS Credentials using OIDC
-      - name: Configure AWS Credentials
+      - name: Configure AWS Credentials using OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::788356290929:role/GitHubActionsFlaskDeployRole
           aws-region: us-east-1
 
-      # 4. Verify AWS Identity
       - name: Verify AWS Identity
-        run: |
-          aws sts get-caller-identity
+        run: aws sts get-caller-identity
 
-      # 5. Setup Terraform
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 6. Terraform Initialize
       - name: Terraform Init
         run: terraform init
 
-      # 7. Terraform Format Check
       - name: Terraform Format
-        run: terraform fmt -check -recursive
+        run: terraform fmt -check
 
-      # 8. Terraform Validate
       - name: Terraform Validate
         run: terraform validate
 
-      # 9. Terraform Plan
       - name: Terraform Plan
-        run: terraform plan -out=tfplan
+        run: terraform plan
 
-      # 10. Terraform Apply
       - name: Terraform Apply
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve
+
 
 
    
