@@ -1,5 +1,5 @@
 
-name: Deploy Flask Application to Private EC2
+name: Terraform AWS VPC Deployment
 
 on:
   push:
@@ -12,126 +12,50 @@ permissions:
   id-token: write
 
 jobs:
-  deploy:
+  terraform:
+    name: Terraform Init, Plan and Apply
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout source code
+      # 1. Checkout GitHub repository
       - name: Checkout Code
         uses: actions/checkout@v4
 
       # 2. Configure AWS using OIDC
-      - name: Configure AWS Credentials using OIDC
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::788356290929:role/GitHubActionsFlaskDeployRole
-          aws-region: ap-south-1
+          aws-region: us-east-1
 
-      # 3. Verify AWS authentication
+      # 3. Verify AWS Authentication
       - name: Verify AWS Identity
         run: |
           aws sts get-caller-identity
 
-      # 4. Configure SSH
-      - name: Configure SSH
-        env:
-          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
+      # 4. Install Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-          printf '%s' "$SSH_PRIVATE_KEY_B64" | base64 --decode > ~/.ssh/id_rsa
+      # 5. Terraform Initialize
+      - name: Terraform Init
+        run: terraform init
 
-          chmod 600 ~/.ssh/id_rsa
+      # 6. Terraform Format Check
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
 
-          ssh-keygen -y -f ~/.ssh/id_rsa > /dev/null
+      # 7. Terraform Validate
+      - name: Terraform Validate
+        run: terraform validate
 
-      # 5. Configure Bastion and Private EC2
-      - name: Configure Bastion and Private EC2
-        env:
-          BASTION_HOST: ${{ secrets.BASTION_HOST }}
-          BASTION_USER: ${{ secrets.BASTION_USER }}
-          PRIVATE_HOST: ${{ secrets.PRIVATE_HOST }}
-          PRIVATE_USER: ${{ secrets.PRIVATE_USER }}
-        run: |
-          cat > ~/.ssh/config <<EOF
-          Host bastion
-            HostName $BASTION_HOST
-            User $BASTION_USER
-            IdentityFile ~/.ssh/id_rsa
-            IdentitiesOnly yes
-            StrictHostKeyChecking accept-new
+      # 8. Terraform Plan
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
 
-          Host private-server
-            HostName $PRIVATE_HOST
-            User $PRIVATE_USER
-            ProxyJump bastion
-            IdentityFile ~/.ssh/id_rsa
-            IdentitiesOnly yes
-            StrictHostKeyChecking accept-new
-          EOF
-
-          chmod 600 ~/.ssh/config
-
-      # 6. Test private EC2 connection
-      - name: Test Private EC2 Connection
-        run: |
-          ssh private-server "hostname && whoami"
-
-      # 7. Copy application
-      - name: Copy Application to Private EC2
-        run: |
-          ssh private-server "mkdir -p ~/flask-app"
-
-          rsync -avz --delete \
-            --exclude '.git' \
-            --exclude 'venv' \
-            -e ssh \
-            ./ private-server:flask-app/
-
-      # 8. Deploy Flask application
-      - name: Deploy Flask Application
-        run: |
-          ssh private-server 'bash -s' <<'REMOTE'
-          set -e
-
-          APP_DIR="$HOME/flask-app"
-          cd "$APP_DIR"
-
-          sudo apt update
-          sudo apt install -y python3 python3-pip python3-venv
-
-          python3 -m venv venv
-
-          ./venv/bin/pip install --upgrade pip
-          ./venv/bin/pip install -r requirements.txt
-          ./venv/bin/pip install gunicorn
-
-          sudo tee /etc/systemd/system/flask-app.service > /dev/null <<EOF
-          [Unit]
-          Description=Flask Application
-          After=network.target
-
-          [Service]
-          User=$(whoami)
-          WorkingDirectory=$APP_DIR
-          ExecStart=$APP_DIR/venv/bin/gunicorn --workers 2 --bind 0.0.0.0:5000 app:app
-          Restart=always
-          RestartSec=5
-
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-
-          sudo systemctl daemon-reload
-          sudo systemctl enable flask-app
-          sudo systemctl restart flask-app
-
-          sudo systemctl is-active flask-app
-
-          echo "Flask deployment successful!"
-
-          REMOTE
+      # 9. Terraform Apply
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
 
 
 
